@@ -240,6 +240,7 @@
   <button id="tab-w" onclick="tab('w')">⭐監視</button>
   <button id="tab-h" onclick="tab('h')">💼保有</button>
   <button id="tab-s" onclick="tab('s')">🔎発掘</button>
+  <button id="tab-m" onclick="tab('m')">🏦信用情報</button>
 </div>
 
 <!-- ============ 詳細タブ ============ -->
@@ -489,6 +490,33 @@
 
   <div id="alertBar" class="alertbar"></div>
   <div id="hlist"></div>
+</div>
+
+<!-- ============ 信用情報タブ ============ -->
+<div id="view-m" class="hide">
+  <div class="card">
+    <label>銘柄の信用残を調べる（コード or 名前）</label>
+    <div class="searchwrap">
+      <div class="row">
+        <input id="mgq" autocomplete="off" placeholder="7203 または トヨタ" oninput="onSearchMg()"
+               onkeydown="if(event.key==='Enter'){document.getElementById('mgsug').classList.remove('on');mgLookup();}">
+        <button class="btn" style="width:96px;margin:0" onclick="mgLookup()">表示</button>
+      </div>
+      <div id="mgsug" class="sug"></div>
+    </div>
+    <div class="hint num" id="mgLoad" style="margin-top:6px"></div>
+    <div id="mgDetailBox"></div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:700; margin-bottom:4px">⭐監視・💼保有銘柄の信用残まとめ</div>
+    <div class="hint">保有の信用売り建玉は売り目線（踏み上げ）、それ以外は買い目線（上値の重さ）で評価します。行をタップで詳細分析へ。</div>
+    <button class="btn ghost sm" style="width:100%; margin-top:8px" onclick="mgCheckMine()">🔄 まとめてチェック（未取得分を取得）</button>
+    <div class="hint num" id="mgMineProg" style="margin-top:4px"></div>
+    <div id="mgMineList"></div>
+  </div>
+
+  <div class="disc">信用残は週1回更新（Yahoo!ファイナンス）。買残増＝将来の売り圧力（上値が重くなりやすい）／売残増＝踏み上げ（逆行急騰）の火種。投資は自己責任です。</div>
 </div>
 
 <div class="disc" style="text-align:center; color:var(--acc); font-weight:700; letter-spacing:1px; margin-top:14px">
@@ -870,6 +898,81 @@ async function renderMarginDetail(code){
   panel.style.display='';
 }
 
+// ================= 信用情報タブ =================
+function onSearchMg(){
+  const q=document.getElementById('mgq').value, box=document.getElementById('mgsug');
+  const list=searchStocks(q);
+  if(!q.trim()||!list.length){ box.classList.remove('on'); box.innerHTML=''; return; }
+  box.innerHTML=list.map(s=>`<div class="it" onclick="pickSugMg('${s.c}')"><span class="cd">${s.c}</span><span class="nm">${s.n}</span></div>`).join('');
+  box.classList.add('on');
+}
+function pickSugMg(c){ document.getElementById('mgq').value=c; document.getElementById('mgsug').classList.remove('on'); mgLookup(); }
+function mgFromStore(code){
+  const e=marginStore()[code]; if(!e||!e.d||!e.d.length) return null;
+  const L=e.d[0], P=e.d[1]||{};
+  return {dt:L.dt, ratio:L.ratio, buyChg:L.buyChg, sellChg:L.sellChg, buyChg2:P.buyChg??0, sellChg2:P.sellChg??0};
+}
+const mgCol=k=>k.lv===2?'var(--down)':k.lv===1?'var(--warn)':'var(--up)';
+async function mgLookup(){
+  const code=resolveCodeStr(document.getElementById('mgq').value);
+  const box=document.getElementById('mgDetailBox'), load=document.getElementById('mgLoad');
+  if(!code){ alert('銘柄が見つかりません（コードか名前で入力）'); return; }
+  load.textContent='取得中…';
+  const d=await fetchMarginHist(code);
+  load.textContent='';
+  if(!d||!d.length){ box.innerHTML='<div class="empty" style="padding:14px">取得できませんでした（混雑時は少し待って再試行してください）</div>'; return; }
+  const L=d[0], P=d[1]||{};
+  const mg={dt:L.dt, ratio:L.ratio, buyChg:L.buyChg, sellChg:L.sellChg, buyChg2:P.buyChg??0, sellChg2:P.sellChg??0};
+  const kb=marginRisk(mg,'buy'), ks=marginRisk(mg,'sell');
+  const man=v=>(v/10000).toLocaleString(undefined,{maximumFractionDigits:1});
+  const chg=v=>(v>=0?'+':'−')+(Math.abs(v)/10000).toLocaleString(undefined,{maximumFractionDigits:1});
+  box.innerHTML=`
+    <div style="font-weight:700; margin:10px 0 4px">${jpName(code)||code}（${code}）</div>
+    <div class="kv"><span class="mut">買い目線の評価</span><span class="r" style="color:${mgCol(kb)}; font-weight:700">${kb.t}</span></div>
+    <div class="kv"><span class="mut">売り目線の評価</span><span class="r" style="color:${mgCol(ks)}; font-weight:700">${ks.t}</span></div>
+    <table style="width:100%; margin-top:8px; font-size:12px; font-family:var(--mono); border-collapse:collapse">
+      <tr style="color:var(--mut)"><th style="text-align:left; padding:4px 2px">日付</th><th style="text-align:right">売残(万)</th><th style="text-align:right">買残(万)</th><th style="text-align:right">倍率</th></tr>
+      ${d.map(r=>`<tr style="border-top:1px solid var(--line)"><td style="padding:4px 2px">${r.dt}</td><td style="text-align:right">${man(r.sell)}</td><td style="text-align:right">${man(r.buy)}</td><td style="text-align:right; font-weight:700">${r.ratio.toFixed(2)}</td></tr>`).join('')}
+    </table>
+    <div class="hint" style="margin-top:6px">前週比: 売残 ${chg(L.sellChg)}万株 ／ 買残 ${chg(L.buyChg)}万株</div>
+    <button class="btn ghost sm" style="width:100%; margin-top:8px" onclick="document.getElementById('code').value='${code}';tab('d');run();window.scrollTo(0,0)">📊 この銘柄の詳細分析を開く</button>`;
+}
+// 監視＋保有の銘柄一覧（保有を先に・重複は保有優先）
+function mgMineTargets(){
+  const seen=new Set(), out=[];
+  getHolds().forEach(h=>{ if(!seen.has(h.code)){ seen.add(h.code); out.push({code:h.code, kind:'hold', pos:h.pos}); } });
+  getWatch().forEach(w=>{ if(!seen.has(w.code)){ seen.add(w.code); out.push({code:w.code, kind:'watch'}); } });
+  return out;
+}
+function renderMgMine(){
+  const list=mgMineTargets(), box=document.getElementById('mgMineList');
+  if(!box) return;
+  if(!list.length){ box.innerHTML='<div class="card empty">監視・保有に銘柄がありません。</div>'; return; }
+  box.innerHTML=list.map(t=>{
+    const mg=mgFromStore(t.code);
+    const side=(t.kind==='hold' && t.pos==='msell')?'sell':'buy';
+    const k=mg?marginRisk(mg,side):null;
+    const mark=t.kind==='hold'?posLabel(t):'<span class="tag flat">⭐監視</span>';
+    return `<div class="wrow" onclick="loadFromWatch('${t.code}')" style="margin-top:8px">
+      <div class="nm"><div class="c">${mark}${jpName(t.code)||t.code}</div>
+        <div class="s" style="color:${k?mgCol(k):'var(--mut)'}">${k?`${k.t}（${mg.dt}時点）`:'未取得 — 下の「まとめてチェック」で取得'}</div></div>
+      <div class="pr"><div class="p">${mg?mg.ratio.toFixed(2)+'倍':'—'}</div></div>
+    </div>`;
+  }).join('');
+}
+let mgMineBusy=false;
+async function mgCheckMine(){
+  if(mgMineBusy) return; mgMineBusy=true;
+  const list=mgMineTargets(), p=document.getElementById('mgMineProg'); let done=0;
+  for(let i=0;i<list.length;i+=3){
+    await Promise.all(list.slice(i,i+3).map(async t=>{ await fetchMarginHist(t.code); done++; }));
+    if(p) p.textContent=`取得中… ${done}/${list.length}`;
+    renderMgMine();
+  }
+  mgMineBusy=false;
+  if(p) p.textContent=`チェック完了（${list.length}銘柄・週次データ）`;
+}
+
 function render(d){
   const S=STYLE[curStyle];
   const m=computeMetrics(d.rows, d.meta, curStyle);
@@ -1210,13 +1313,14 @@ function drawChart(rows, sl, tp, entry){
 
 // ================= タブ =================
 function tab(t){
-  for(const k of ['d','w','h','s']){
+  for(const k of ['d','w','h','s','m']){
     document.getElementById('view-'+k).classList.toggle('hide', t!==k);
     document.getElementById('tab-'+k).classList.toggle('on', t===k);
   }
   if(t==='w') renderWatchList();
   if(t==='h') renderHolds();
   if(t==='s') loadScanCache();
+  if(t==='m') renderMgMine();
 }
 
 // ================= ウォッチリスト =================
