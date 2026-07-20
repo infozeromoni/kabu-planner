@@ -90,6 +90,12 @@
   .tag.warn{background:rgba(245,166,35,.15); color:var(--warn)}
   .tag.gc{background:rgba(22,199,132,.22); color:var(--up); border:1px solid rgba(22,199,132,.5)}
   .tag.dc{background:rgba(240,97,109,.22); color:var(--down); border:1px solid rgba(240,97,109,.5)}
+  /* 保有区分バッジ: 現物/信用買い/信用売り */
+  .tag.pos-c{background:rgba(139,152,169,.15); color:var(--mut)}
+  .tag.pos-b{background:rgba(245,166,35,.2); color:var(--warn); border:1px solid rgba(245,166,35,.5)}
+  .tag.pos-s{background:rgba(240,97,109,.22); color:var(--down); border:1px solid rgba(240,97,109,.5)}
+  .hrow.pos-b{border-left:3px solid var(--warn)}
+  .hrow.pos-s{border-left:3px solid var(--down)}
   .verdict{font-size:14px; margin:8px 0 2px}
   .verdict b{font-size:15px}
   .kv{display:flex; justify-content:space-between; font-size:13px; padding:5px 0; border-bottom:1px dashed var(--line); gap:8px}
@@ -1559,8 +1565,10 @@ function addHold(){
 }
 // 信用売り(空売り)ポジションか。pos未設定の既存データは現物買い扱い(後方互換)
 const isShort=x=>x.pos==='msell';
-const posLabel=x=>x.pos==='msell'?'<span style="color:var(--down); font-size:11px; font-weight:700">信用売</span>'
-               :x.pos==='mbuy' ?'<span style="color:var(--acc); font-size:11px; font-weight:700">信用買</span>':'';
+const posLabel=x=>x.pos==='msell'?'<span class="tag pos-s">信用売り</span>'
+               :x.pos==='mbuy' ?'<span class="tag pos-b">信用買い</span>'
+               :'<span class="tag pos-c">現物</span>';
+const posClass=x=>x.pos==='msell'?'pos-s':x.pos==='mbuy'?'pos-b':'';
 function delHold(c){ setHolds(getHolds().filter(x=>x.code!==c)); renderHolds(); }
 function toggleHold(c){
   const h=getHolds(); const x=h.find(v=>v.code===c); if(x){ x.on=!x.on; setHolds(h); } refreshHolds();
@@ -1653,9 +1661,9 @@ function renderHolds(){
       </div>`;
     }
     const modeMk = x.mode==='fixed'?'🔒固定':'📈追従';
-    return `<div class="wrow hrow" id="h-${x.code}">
+    return `<div class="wrow hrow ${posClass(x)}" id="h-${x.code}">
       <div class="nm" onclick="loadFromWatch('${x.code}')">
-        <div class="c">${jpName(x.code)||x.code} ${posLabel(x)}</div>
+        <div class="c">${posLabel(x)}${jpName(x.code)||x.code}</div>
         <div class="s" id="hsub-${x.code}" style="white-space:normal; overflow:visible; line-height:1.7">${isShort(x)?'売建':'買'}¥${fmt(x.entry)}${x.qty?` ×${x.qty}`:''}　🎯${fmt(tp)} / 🛑${fmt(sl)}</div>
       </div>
       <div class="st" id="hst-${x.code}"><span class="tag flat">…</span></div>
