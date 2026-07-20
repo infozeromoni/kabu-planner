@@ -494,6 +494,9 @@
 
 <!-- ============ 信用情報タブ ============ -->
 <div id="view-m" class="hide">
+  <div class="card" style="padding:10px 14px">
+    <div class="hint num" id="mgUpdated" style="margin:0">信用残データ: 未取得</div>
+  </div>
   <div class="card">
     <label>銘柄の信用残を調べる（コード or 名前）</label>
     <div class="searchwrap">
@@ -995,7 +998,22 @@ function mgRankEntries(){
   }
   return out;
 }
+// 信用残データの基準日（週次）と最終取得日時を表示
+function renderMgUpdated(){
+  const el=document.getElementById('mgUpdated'); if(!el) return;
+  const es=Object.values(marginStore());
+  if(!es.length){ el.textContent='信用残データ: 未取得（🏦信用残・まとめてチェック・銘柄検索で取得されます）'; return; }
+  let dt=0, dts='', t=0;
+  es.forEach(e=>{
+    const s=e.d?.[0]?.dt, ts=s?new Date(s).getTime():0;
+    if(ts>dt){ dt=ts; dts=s; }
+    if(e.t>t) t=e.t;
+  });
+  const f=new Date(t), pad=n=>String(n).padStart(2,'0');
+  el.textContent=`信用残データ: ${dts}時点（週次・${es.length}銘柄）／ 最終取得: ${f.getFullYear()}/${f.getMonth()+1}/${f.getDate()} ${pad(f.getHours())}:${pad(f.getMinutes())}`;
+}
 function renderMgRank(){
+  renderMgUpdated();
   const box=document.getElementById('mgRankList'); if(!box) return;
   const Lz=MG_LENS[curMgLens];
   document.getElementById('mgLensDesc').textContent=Lz.d;
