@@ -435,6 +435,9 @@
       <button data-v="reb" onclick="setLens('reb')">💎反発</button>
     </div>
     <div class="hint" id="lensDesc" style="margin-top:6px"></div>
+    <button class="btn ghost sm" style="width:100%; margin-top:8px" onclick="enrichMargin()">🏦 表示中の上位20銘柄の信用残リスクを確認</button>
+    <div class="hint">買い残の増加＝将来の売り圧力（高倍率ほど上値が重い）、売り残の増加＝踏み上げ（逆行急騰）リスク。⚠危険と判定した銘柄は表示順を後ろに降格します。データは週1回更新（Yahoo!ファイナンス）。</div>
+    <div class="hint num" id="mProg" style="margin-top:4px"></div>
   </div>
   <div id="slist"></div>
 </div>
@@ -1489,10 +1492,77 @@ const LENS={
 };
 let curLens='total';
 function setLens(v){ curLens=v; document.querySelectorAll('#lens button').forEach(b=>b.classList.toggle('on',b.dataset.v===v)); renderScan(); }
+// ===== 信用残（週次）の取得と危険度判定 =====
+// Yahoo!ファイナンスの信用残時系列(週次)をスクレイピング。1日キャッシュ。
+const MKEY='toushi_margin';
+function marginStore(){ try{return JSON.parse(localStorage.getItem(MKEY))||{}}catch(e){return{}} }
+async function fetchMarginHist(code){
+  const st=marginStore(), c=st[code];
+  if(c && Date.now()-c.t<86400e3) return c.d;
+  const html=await proxiedText(`https://finance.yahoo.co.jp/quote/${code}.T/history?styl=margin`, 12000);
+  const tbl=html && html.match(/信用残時系列のテーブル[\s\S]*?<\/table>/);
+  if(!tbl) return c?c.d:null;
+  const d=[];
+  for(const tr of tbl[0].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)){
+    const cells=[...tr[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)]
+      .map(m=>m[1].replace(/<[^>]*>/g,'').replace(/,/g,'').trim());
+    if(cells.length>=6 && /^\d{4}\//.test(cells[0]))
+      d.push({dt:cells[0], sell:+cells[1], buy:+cells[2], sellChg:+cells[3], buyChg:+cells[4], ratio:+cells[5]});
+    if(d.length>=3) break;
+  }
+  if(!d.length) return c?c.d:null;
+  st[code]={t:Date.now(), d};
+  try{ localStorage.setItem(MKEY, JSON.stringify(st)); }catch(e){}
+  return d;
+}
+// side='buy':買い目線の危険（買残増=将来の売り圧力） / 'sell':売り目線の危険（売残増=踏み上げ）
+// lv: 0=問題なし 1=注意 2=危険
+function marginRisk(mg, side){
+  if(!mg || !(mg.ratio>=0)) return null;
+  if(side==='sell'){
+    if(mg.sellChg>0 && mg.ratio<=1) return {lv:2, t:`⚠売残増・倍率${mg.ratio.toFixed(2)} 踏み上げ危険`};
+    if(mg.sellChg>0 && (mg.ratio<=2 || mg.sellChg2>0)) return {lv:1, t:'△売残増加中（逆行急騰に注意）'};
+  } else {
+    if(mg.buyChg>0 && mg.ratio>=8) return {lv:2, t:`⚠買残増・倍率${mg.ratio.toFixed(1)}倍 上値重い`};
+    if(mg.buyChg>0 && (mg.ratio>=4 || mg.buyChg2>0)) return {lv:1, t:`△買残増（倍率${mg.ratio.toFixed(1)}）`};
+  }
+  return {lv:0, t:`✓信用残 倍率${mg.ratio.toFixed(1)}`};
+}
+let enrichingMg=false;
+async function enrichMargin(){
+  if(enrichingMg) return;
+  if(!scanResults.length){ alert('先に「▶ スキャン開始」を実行してください'); return; }
+  enrichingMg=true;
+  const top=LENS[curLens].f(scanResults).slice(0,20);
+  const p=document.getElementById('mProg'); let done=0;
+  for(let i=0;i<top.length;i+=3){
+    await Promise.all(top.slice(i,i+3).map(async r=>{
+      const d=await fetchMarginHist(r.code);
+      if(d && d.length){
+        const L=d[0], P=d[1]||{};
+        r.mg={dt:L.dt, ratio:L.ratio, buyChg:L.buyChg, sellChg:L.sellChg, buyChg2:P.buyChg??0, sellChg2:P.sellChg??0};
+      }
+      done++;
+    }));
+    if(p) p.textContent=`信用残を確認中… ${done}/${top.length}`;
+  }
+  enrichingMg=false;
+  const got=top.filter(r=>r.mg).length;
+  if(p) p.textContent=`信用残チェック完了（${got}/${top.length}件取得・⚠危険は表示順を降格）`;
+  renderScan();
+  try{ const keep=[...scanResults.slice(0,40), ...scanResults.filter(x=>x.sellNow)].filter((v,i,a)=>a.indexOf(v)===i); localStorage.setItem('toushi_scan', JSON.stringify({t:Date.now(), r:keep})); }catch(e){}
+}
 function renderScan(){
   const box=document.getElementById('slist');
   document.getElementById('lensDesc').textContent = LENS[curLens].d;
-  const top=LENS[curLens].f(scanResults).slice(0,20);
+  let top=LENS[curLens].f(scanResults).slice(0,20);
+  const mgSide = curLens==='sell' ? 'sell' : 'buy';
+  // 信用残チェック済みなら、危険度の高い銘柄を同一リスト内で後ろに降格（元の順位は同一危険度内で維持）
+  if(top.some(r=>r.mg)){
+    top=top.map((r,i)=>({r,i}))
+      .sort((a,b)=>((marginRisk(a.r.mg,mgSide)?.lv||0)-(marginRisk(b.r.mg,mgSide)?.lv||0)) || (a.i-b.i))
+      .map(x=>x.r);
+  }
   if(!top.length){
     box.innerHTML = curLens==='now'
       ? '<div class="card empty">🛒 今日は「今買い」該当なし。<b>無理に買う日ではない</b>——それが今日の答えです。<br><span style="font-size:11px">（🌱押し目レンズで「あと少しで買い場」の候補を待ち伏せするのも手）</span></div>'
@@ -1517,6 +1587,7 @@ function renderScan(){
       <div class="nm">
         <div class="c">${jpName(r.code)||r.code}${chg}</div>
         <div class="s">${r.tags.join('・')||'—'} ／ 🟢${r.buy??0}🔴${r.sell??0} ／ 3ヶ月 ${r.mom>=0?'+':''}${r.mom.toFixed(1)}%</div>
+        ${(()=>{ const k=marginRisk(r.mg, mgSide); return k?`<div class="s" style="color:${k.lv===2?'var(--down)':k.lv===1?'var(--warn)':'var(--mut)'};font-weight:${k.lv?700:400}">${k.t}（${r.mg.dt}時点）</div>`:''; })()}
       </div>
       <div class="pr"><div class="p">${fmt(r.px)}円</div><div class="g score" style="color:var(--acc)">★${r.score}</div></div>
     </div>`;

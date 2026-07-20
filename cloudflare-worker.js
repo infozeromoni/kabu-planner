@@ -26,7 +26,8 @@ export default {
     // 安全のため取得先を株価サイトに限定
     let host;
     try { host = new URL(target).hostname; } catch { return new Response("bad url", { status: 400, headers: cors }); }
-    const allow = ["query1.finance.yahoo.com", "query2.finance.yahoo.com", "stooq.com", "stooq.pl"];
+    const allow = ["query1.finance.yahoo.com", "query2.finance.yahoo.com", "stooq.com", "stooq.pl",
+                   "finance.yahoo.co.jp"]; // 信用残時系列（発掘タブの信用残リスクチェック用）
     if (!allow.some(h => host === h || host.endsWith("." + h))) {
       return new Response("host not allowed", { status: 403, headers: cors });
     }
