@@ -516,6 +516,19 @@
     <div id="mgMineList"></div>
   </div>
 
+  <div class="card">
+    <div style="font-weight:700; margin-bottom:4px">📋 信用残ランキング（取得済みの銘柄）</div>
+    <div class="seg" id="mgLens" style="margin-top:8px; flex-wrap:wrap; font-size:13px">
+      <button data-v="ratioLow" class="on" onclick="setMgLens('ratioLow')">倍率低</button>
+      <button data-v="ratioUp" onclick="setMgLens('ratioUp')">倍率増</button>
+      <button data-v="buyUp" onclick="setMgLens('buyUp')">買残増</button>
+      <button data-v="buyDn" onclick="setMgLens('buyDn')">買残減</button>
+    </div>
+    <div class="hint" id="mgLensDesc" style="margin-top:6px"></div>
+    <div id="mgRankList"></div>
+    <div class="hint" style="margin-top:8px">対象は信用残を取得済みの銘柄のみ。発掘タブの「🏦信用残」や上の「まとめてチェック」で取得すると増えます。行をタップで詳細分析へ。</div>
+  </div>
+
   <div class="disc">信用残は週1回更新（Yahoo!ファイナンス）。買残増＝将来の売り圧力（上値が重くなりやすい）／売残増＝踏み上げ（逆行急騰）の火種。投資は自己責任です。</div>
 </div>
 
@@ -936,6 +949,7 @@ async function mgLookup(){
     </table>
     <div class="hint" style="margin-top:6px">前週比: 売残 ${chg(L.sellChg)}万株 ／ 買残 ${chg(L.buyChg)}万株</div>
     <button class="btn ghost sm" style="width:100%; margin-top:8px" onclick="document.getElementById('code').value='${code}';tab('d');run();window.scrollTo(0,0)">📊 この銘柄の詳細分析を開く</button>`;
+  renderMgRank(); // 新規取得した銘柄をランキングにも反映
 }
 // 監視＋保有の銘柄一覧（保有を先に・重複は保有優先）
 function mgMineTargets(){
@@ -960,6 +974,40 @@ function renderMgMine(){
     </div>`;
   }).join('');
 }
+// ===== 信用残ランキング（取得済みキャッシュ全銘柄が対象） =====
+const mgMan=v=>(v/10000).toLocaleString(undefined,{maximumFractionDigits:1});
+const mgChgF=v=>(v>=0?'+':'−')+(Math.abs(v)/10000).toLocaleString(undefined,{maximumFractionDigits:1});
+const MG_LENS={
+  ratioLow:{d:'信用倍率が低い順（0.1倍〜）＝売り長・踏み上げ（急騰）が起きやすい需給', f:e=>e.mg.ratio>=0.1, s:(a,b)=>a.mg.ratio-b.mg.ratio, fmt:e=>e.mg.ratio.toFixed(2)+'倍'},
+  ratioUp:{d:'信用倍率の上昇幅が大きい順（前週比）＝買い長化が進んでいる', f:e=>e.chgRatio!=null&&e.chgRatio>0, s:(a,b)=>b.chgRatio-a.chgRatio, fmt:e=>'+'+e.chgRatio.toFixed(2)},
+  buyUp:{d:'買残の増加が大きい順＝将来の売り圧力が積み上がっている（上値が重くなりやすい）', f:e=>e.mg.buyChg>0, s:(a,b)=>b.mg.buyChg-a.mg.buyChg, fmt:e=>mgChgF(e.mg.buyChg)+'万'},
+  buyDn:{d:'買残の減少が大きい順＝売り圧力が軽くなっている（需給改善）', f:e=>e.mg.buyChg<0, s:(a,b)=>a.mg.buyChg-b.mg.buyChg, fmt:e=>mgChgF(e.mg.buyChg)+'万'},
+};
+let curMgLens='ratioLow';
+function setMgLens(v){ curMgLens=v; document.querySelectorAll('#mgLens button').forEach(b=>b.classList.toggle('on',b.dataset.v===v)); renderMgRank(); }
+function mgRankEntries(){
+  const st=marginStore(), out=[];
+  for(const code of Object.keys(st)){
+    const d=st[code].d; if(!d||!d.length) continue;
+    const L=d[0], P=d[1]||null;
+    out.push({code, mg:{dt:L.dt, ratio:L.ratio, buy:L.buy, sell:L.sell, buyChg:L.buyChg, sellChg:L.sellChg},
+              chgRatio:P?L.ratio-P.ratio:null});
+  }
+  return out;
+}
+function renderMgRank(){
+  const box=document.getElementById('mgRankList'); if(!box) return;
+  const Lz=MG_LENS[curMgLens];
+  document.getElementById('mgLensDesc').textContent=Lz.d;
+  const top=mgRankEntries().filter(Lz.f).sort(Lz.s).slice(0,20);
+  if(!top.length){ box.innerHTML='<div class="card empty">該当データがありません。発掘タブの「🏦信用残」や「まとめてチェック」で信用残を取得すると、ここに一覧が出ます。</div>'; return; }
+  box.innerHTML=top.map((e,i)=>`<div class="wrow" onclick="loadFromWatch('${e.code}')" style="margin-top:8px">
+    <div style="min-width:24px; font-weight:800; color:var(--mut); text-align:center">${i+1}</div>
+    <div class="nm"><div class="c">${jpName(e.code)||e.code}</div>
+      <div class="s">倍率${e.mg.ratio.toFixed(2)}${e.chgRatio!=null?`（前週${e.chgRatio>=0?'+':''}${e.chgRatio.toFixed(2)}）`:''} ／ 買残${mgMan(e.mg.buy)}万（${mgChgF(e.mg.buyChg)}万）／ 売残${mgMan(e.mg.sell)}万</div></div>
+    <div class="pr"><div class="p">${Lz.fmt(e)}</div><div class="pl" style="color:var(--mut)">${e.mg.dt}</div></div>
+  </div>`).join('');
+}
 let mgMineBusy=false;
 async function mgCheckMine(){
   if(mgMineBusy) return; mgMineBusy=true;
@@ -971,6 +1019,7 @@ async function mgCheckMine(){
   }
   mgMineBusy=false;
   if(p) p.textContent=`チェック完了（${list.length}銘柄・週次データ）`;
+  renderMgRank();
 }
 
 function render(d){
@@ -1320,7 +1369,7 @@ function tab(t){
   if(t==='w') renderWatchList();
   if(t==='h') renderHolds();
   if(t==='s') loadScanCache();
-  if(t==='m') renderMgMine();
+  if(t==='m'){ renderMgMine(); renderMgRank(); }
 }
 
 // ================= ウォッチリスト =================
