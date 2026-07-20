@@ -745,7 +745,11 @@ document.querySelectorAll('#style button').forEach(b=>b.onclick=()=>{
 
 // ================= データ取得 =================
 // 複数のCORSプロキシを順に試し、生テキストを返す
-const DEFAULT_PROXY='https://kabu-proxy.incomebase0108.workers.dev'; // 配布用の共有プロキシ(Cloudflare Worker)
+// サーバー設置版(http/https)は同一オリジンの proxy.php を自動で最優先に使う。
+// file:// で開いた場合や proxy.php が無い場合は従来の共有Worker→公開プロキシに順次フォールバック。
+const DEFAULT_PROXY = location.protocol.startsWith('http')
+  ? new URL('proxy.php', location.href).href
+  : 'https://kabu-proxy.incomebase0108.workers.dev';
 function proxyRoutes(){
   const custom=(localStorage.getItem('toushi_proxy')||'').trim() || DEFAULT_PROXY;
   const list=[];
