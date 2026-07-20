@@ -226,7 +226,7 @@
 <div class="topbar">
   <div>
     <h1>📈 日本株 売買プランナー</h1>
-    <div class="sub"><span class="brand">INCOMEBASE</span> 提供 ／ <b>判断の補助</b>ツール <span style="color:var(--mut); font-size:10px">v2</span></div>
+    <div class="sub"><span class="brand">INCOMEBASE</span> 提供 ／ <b>判断の補助</b>ツール <span style="color:var(--mut); font-size:10px">v3</span></div>
   </div>
   <div class="clock">
     <span class="dot"></span><span id="mkt">—</span>
@@ -530,8 +530,10 @@
       <button data-v="sellTotal" onclick="setMgLens('sellTotal')">売残合計</button>
     </div>
     <div class="hint" id="mgLensDesc" style="margin-top:6px"></div>
+    <button class="btn ghost sm" style="width:100%; margin-top:8px" onclick="mgFetchUniverse()">🔄 日経225全銘柄の信用残を取得</button>
+    <div class="hint num" id="mgRankProg" style="margin-top:4px"></div>
     <div id="mgRankList"></div>
-    <div class="hint" style="margin-top:8px">対象は信用残を取得済みの銘柄のみ。発掘タブの「🏦信用残」や上の「まとめてチェック」で取得すると増えます。行をタップで詳細分析へ。</div>
+    <div class="hint" style="margin-top:8px">対象は信用残を取得済みの銘柄。上のボタンで日経225を一括取得できます（サーバーに1日キャッシュされるため2回目以降・他の端末では数十秒）。行をタップで詳細分析へ。</div>
   </div>
 
   <div class="disc">信用残は週1回更新（Yahoo!ファイナンス）。買残増＝将来の売り圧力（上値が重くなりやすい）／売残増＝踏み上げ（逆行急騰）の火種。投資は自己責任です。</div>
@@ -1033,6 +1035,35 @@ function renderMgRank(){
       <div class="s">倍率${e.mg.ratio.toFixed(2)}${e.chgRatio!=null?`（前週${e.chgRatio>=0?'+':''}${e.chgRatio.toFixed(2)}）`:''} ／ 買残${mgMan(e.mg.buy)}万（${mgChgF(e.mg.buyChg)}万）／ 売残${mgMan(e.mg.sell)}万</div></div>
     <div class="pr"><div class="p">${Lz.fmt(e)}</div><div class="pl" style="color:var(--mut)">${e.mg.dt}</div></div>
   </div>`).join('');
+}
+// 日経225全銘柄の信用残を軽量API(10銘柄ずつ)で一括取得してランキングの母集団にする
+let mgUnivBusy=false;
+async function mgFetchUniverse(){
+  if(mgUnivBusy) return;
+  if(!location.protocol.startsWith('http')){ alert('この機能はサーバー設置版（https://〜）でのみ使えます'); return; }
+  mgUnivBusy=true;
+  const p=document.getElementById('mgRankProg');
+  const now=Date.now();
+  const need=N225.filter(c=>{ const e=marginStore()[c]; return !(e && now-e.t<86400e3); });
+  if(!need.length){ mgUnivBusy=false; if(p) p.textContent='全銘柄 取得済み（24時間以内）'; renderMgRank(); return; }
+  let done=0;
+  for(let i=0;i<need.length;i+=10){
+    const batch=need.slice(i,i+10);
+    try{
+      const r=await fetch(new URL('proxy.php?margin='+batch.join(','), location.href), {cache:'no-store'});
+      if(r.ok){
+        const j=await r.json(), st=marginStore();
+        for(const c of batch){ if(j[c] && j[c].length) st[c]={t:Date.now(), d:j[c]}; }
+        try{ localStorage.setItem(MKEY, JSON.stringify(st)); }catch(e){}
+      }
+    }catch(e){}
+    done+=batch.length;
+    if(p) p.textContent=`取得中… ${Math.min(done,need.length)}/${need.length}（初回は数分・2回目以降は数十秒）`;
+    renderMgRank();
+  }
+  mgUnivBusy=false;
+  if(p) p.textContent=`取得完了（日経225・週次データ）`;
+  renderMgRank();
 }
 let mgMineBusy=false;
 async function mgCheckMine(){
@@ -1720,18 +1751,30 @@ function marginStore(){ try{return JSON.parse(localStorage.getItem(MKEY))||{}}ca
 async function fetchMarginHist(code){
   const st=marginStore(), c=st[code];
   if(c && Date.now()-c.t<86400e3) return c.d;
-  const html=await proxiedText(`https://finance.yahoo.co.jp/quote/${code}.T/history?styl=margin`, 12000);
-  const tbl=html && html.match(/信用残時系列のテーブル[\s\S]*?<\/table>/);
-  if(!tbl) return c?c.d:null;
-  const d=[];
-  for(const tr of tbl[0].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)){
-    const cells=[...tr[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)]
-      .map(m=>m[1].replace(/<[^>]*>/g,'').replace(/,/g,'').trim());
-    if(cells.length>=6 && /^\d{4}\//.test(cells[0]))
-      d.push({dt:cells[0], sell:+cells[1], buy:+cells[2], sellChg:+cells[3], buyChg:+cells[4], ratio:+cells[5]});
-    if(d.length>=3) break;
+  let d=null;
+  // サーバー設置版: proxy.phpの軽量抽出API（サーバー側24hキャッシュ＝全端末で共有・転送量ごく小）
+  if(location.protocol.startsWith('http')){
+    try{
+      const r=await fetch(new URL('proxy.php?margin='+code, location.href), {cache:'no-store'});
+      if(r.ok){ const j=await r.json(); if(j && j[code] && j[code].length) d=j[code]; }
+    }catch(e){}
   }
-  if(!d.length) return c?c.d:null;
+  if(!d){
+    // フォールバック: HTMLを取得してブラウザ側でパース（file://等）
+    const html=await proxiedText(`https://finance.yahoo.co.jp/quote/${code}.T/history?styl=margin`, 12000);
+    const tbl=html && html.match(/信用残時系列のテーブル[\s\S]*?<\/table>/);
+    if(tbl){
+      d=[];
+      for(const tr of tbl[0].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)){
+        const cells=[...tr[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)]
+          .map(m=>m[1].replace(/<[^>]*>/g,'').replace(/,/g,'').trim());
+        if(cells.length>=6 && /^\d{4}\//.test(cells[0]))
+          d.push({dt:cells[0], sell:+cells[1], buy:+cells[2], sellChg:+cells[3], buyChg:+cells[4], ratio:+cells[5]});
+        if(d.length>=3) break;
+      }
+    }
+  }
+  if(!d||!d.length) return c?c.d:null;
   st[code]={t:Date.now(), d};
   try{ localStorage.setItem(MKEY, JSON.stringify(st)); }catch(e){}
   return d;
