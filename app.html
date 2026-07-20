@@ -437,7 +437,7 @@
 <div id="view-h" class="hide">
   <div class="card">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px">
-      <div><b>売りアラート</b><div class="hint" style="margin:2px 0 0">条件到達で通知（ページを開いている間のみ）</div></div>
+      <div><b>決済アラート（売り・買戻し）</b><div class="hint" style="margin:2px 0 0">条件到達で通知（ページを開いている間のみ）</div></div>
       <label class="sw"><input type="checkbox" id="alertSw" onchange="toggleAlerts()"><span class="sl"></span></label>
     </div>
   </div>
@@ -449,16 +449,21 @@
       <div id="hsug" class="sug"></div>
     </div>
     <div class="adv" style="grid-template-columns:1fr 1fr 1fr; margin-top:8px">
-      <div><label>買値 *</label><input id="hentry" inputmode="decimal" placeholder="2500"></div>
+      <div><label>区分</label><select id="hside">
+        <option value="cash">現物買い</option>
+        <option value="mbuy">信用買い</option>
+        <option value="msell">信用売り</option>
+      </select></div>
+      <div><label>建値(買値) *</label><input id="hentry" inputmode="decimal" placeholder="2500"></div>
       <div><label>株数(任意)</label><input id="hqty" inputmode="numeric" placeholder="100"></div>
-      <div><label>売り目標(任意)</label><input id="htp" inputmode="decimal" placeholder="自動"></div>
     </div>
-    <div class="adv" style="grid-template-columns:1fr 1fr; margin-top:8px">
+    <div class="adv" style="grid-template-columns:1fr 1fr 1fr; margin-top:8px">
+      <div><label>利確目標(任意)</label><input id="htp" inputmode="decimal" placeholder="自動"></div>
       <div><label>損切り(任意)</label><input id="hsl" inputmode="decimal" placeholder="自動"></div>
-      <div><label>購入日(任意・後から登録時)</label><input id="hdate" type="date"></div>
+      <div><label>建日(任意・後から登録時)</label><input id="hdate" type="date"></div>
     </div>
     <button class="btn" style="margin-top:10px" onclick="addHold()">＋ 保有に登録</button>
-    <div class="hint">目標・損切りが空なら自動設定。既定は<b>📈追従</b>＝チャートに合わせ<b>毎日再計算</b>（上昇で損切りが切り上がるトレイリング／下げても下がらず利益を守る）。<b>購入日を入れると、その日のチャートから購入時ラインを算出し、購入日〜今日のトレイリングを遡って再現</b>します（数日後に登録してもズレません）。各行 <b>📈/🔒</b> で方式切替、<b>✎</b>で手動指定可。</div>
+    <div class="hint"><b>信用売り</b>は損益・利確・損切りが逆向きになります（値下がりで利益／利確ラインは下・損切りラインは上）。目標・損切りが空なら自動設定。既定は<b>📈追従</b>＝チャートに合わせ<b>毎日再計算</b>（上昇で損切りが切り上がるトレイリング／下げても下がらず利益を守る）。<b>購入日を入れると、その日のチャートから購入時ラインを算出し、購入日〜今日のトレイリングを遡って再現</b>します（数日後に登録してもズレません）。各行 <b>📈/🔒</b> で方式切替、<b>✎</b>で手動指定可。</div>
     <button class="btn ghost sm" style="width:100%; margin-top:10px" onclick="refreshHolds()">🔄 損益・アラートを更新</button>
   </div>
 
@@ -1537,18 +1542,25 @@ function addHold(){
   const code=resolveCodeStr(document.getElementById('hcode').value);
   const entry=parseFloat(document.getElementById('hentry').value);
   if(!code){ alert('銘柄が見つかりません（コードか名前で入力）'); return; }
-  if(!(entry>0)){ alert('買値を入れてください'); return; }
+  if(!(entry>0)){ alert('建値(買値)を入れてください'); return; }
+  const pos=document.getElementById('hside').value; // cash=現物買い / mbuy=信用買い / msell=信用売り
   const qty=parseFloat(document.getElementById('hqty').value)||null;
   const tp=parseFloat(document.getElementById('htp').value)||null;
   const sl=parseFloat(document.getElementById('hsl').value)||null;
+  if(pos==='msell' && tp && sl && !(tp<sl)){ alert('信用売りは 利確目標＜損切り になります（下がると利益）。入力を確認してください'); return; }
   const dv=document.getElementById('hdate').value;
   const buyDate = dv ? new Date(dv+'T15:00:00+09:00').getTime() : Date.now();
   const h=getHolds().filter(x=>x.code!==code);
-  h.push({code, entry, qty, tp, sl, on:true, buyDate});
+  h.push({code, entry, qty, tp, sl, pos, on:true, buyDate});
   setHolds(h);
   ['hcode','hentry','hqty','htp','hsl','hdate'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('hside').value='cash';
   renderHolds();
 }
+// 信用売り(空売り)ポジションか。pos未設定の既存データは現物買い扱い(後方互換)
+const isShort=x=>x.pos==='msell';
+const posLabel=x=>x.pos==='msell'?'<span style="color:var(--down); font-size:11px; font-weight:700">信用売</span>'
+               :x.pos==='mbuy' ?'<span style="color:var(--acc); font-size:11px; font-weight:700">信用買</span>':'';
 function delHold(c){ setHolds(getHolds().filter(x=>x.code!==c)); renderHolds(); }
 function toggleHold(c){
   const h=getHolds(); const x=h.find(v=>v.code===c); if(x){ x.on=!x.on; setHolds(h); } refreshHolds();
@@ -1568,14 +1580,36 @@ function planLevels(closes, highs, lows, styleKey){
   const tp=Math.max(entry+(entry-sl)*S.rr, recHigh);
   return {sl, tp, recLow, recHigh, px, entry, shortUp};
 }
+// planLevels の信用売り(ショート)版: 上下を鏡像反転。損切り=上(抵抗線超え)、利確=下(直近安値)
+function planLevelsShort(closes, highs, lows, styleKey){
+  const S=STYLE[styleKey], px=closes[closes.length-1];
+  if(closes.length<26){ const rp=S.clamp[0]; return {sl:px*(1+rp/100), tp:px*(1-rp*S.rr/100), px}; }
+  const sma5=sma(closes,5), sma25=sma(closes,25), a=atr(highs,lows,closes,14)||px*0.02;
+  const N=Math.min(20,closes.length);
+  const recLow=Math.min(...lows.slice(-N)), recHigh=Math.max(...highs.slice(-N));
+  const shortDn=sma5&&sma25?(px<sma5&&sma5<sma25):(px<sma5);
+  const resist=Math.min(sma25||Infinity, recHigh, px+a*S.atrK);
+  let entry=(shortDn && resist>px*1.002)?resist:px;
+  let sl=Math.max(recHigh*1.005, entry+a*S.atrK);
+  let rp=(sl-entry)/entry*100; rp=Math.max(S.clamp[0],Math.min(S.clamp[1],rp)); sl=entry*(1+rp/100);
+  const tp=Math.min(entry-(sl-entry)*S.rr, recLow);
+  return {sl, tp, recLow, recHigh, px, entry, shortDn};
+}
 // 目標・損切りの実効値
 //  手動(h.tp/h.sl指定) > テクニカル追従(現在チャートmから毎日再計算) > 固定%(買値基準)
 function effTargets(h, m){
   const S=STYLE[curStyle], def={short:3,swing:5,long:8}[curStyle];
   const useTech = h.mode!=='fixed' && m;
   let sl, tp, mode;
-  if(h.sl>0) sl=h.sl; else if(useTech) sl=m.sl; else sl=h.entry*(1-def/100);
-  if(h.tp>0) tp=h.tp; else if(useTech) tp=Math.max(m.recHigh, m.tp); else tp=h.entry*(1+def*S.rr/100);
+  if(isShort(h)){
+    // 信用売り: 損切り=建値の上、利確=建値の下
+    const a=m ? (m.atr||m.px*0.02) : 0;
+    if(h.sl>0) sl=h.sl; else if(useTech) sl=Math.max(m.recHigh*1.005, m.px+a*S.atrK); else sl=h.entry*(1+def/100);
+    if(h.tp>0) tp=h.tp; else if(useTech) tp=Math.min(m.recLow, h.entry*(1-def*S.rr/100)); else tp=h.entry*(1-def*S.rr/100);
+  } else {
+    if(h.sl>0) sl=h.sl; else if(useTech) sl=m.sl; else sl=h.entry*(1-def/100);
+    if(h.tp>0) tp=h.tp; else if(useTech) tp=Math.max(m.recHigh, m.tp); else tp=h.entry*(1+def*S.rr/100);
+  }
   mode = (h.sl>0||h.tp>0) ? 'manual' : (useTech ? 'tech' : 'fixed');
   return {sl, tp, mode};
 }
@@ -1591,6 +1625,7 @@ function saveHoldEdit(c){
   const e=parseFloat(document.getElementById('e-entry-'+c).value);
   const tp=parseFloat(document.getElementById('e-tp-'+c).value);
   const sl=parseFloat(document.getElementById('e-sl-'+c).value);
+  if(isShort(x) && tp>0 && sl>0 && !(tp<sl)){ alert('信用売りは 利確目標＜損切り になります（下がると利益）。入力を確認してください'); return; }
   if(e>0) x.entry=e;
   x.tp = tp>0?tp:null;
   x.sl = sl>0?sl:null;
@@ -1604,11 +1639,11 @@ function renderHolds(){
     const {tp,sl}=effTargets(x);
     if(editingHold===x.code){
       return `<div class="card" id="h-${x.code}">
-        <div style="font-weight:700; margin-bottom:8px">✎ ${jpName(x.code)||x.code}（${x.code}）の目標を変更</div>
+        <div style="font-weight:700; margin-bottom:8px">✎ ${jpName(x.code)||x.code}（${x.code}）の目標を変更 ${posLabel(x)}</div>
         <div class="adv" style="grid-template-columns:1fr 1fr 1fr">
-          <div><label>買値</label><input id="e-entry-${x.code}" inputmode="decimal" value="${x.entry}"></div>
-          <div><label>目標売却(利確)</label><input id="e-tp-${x.code}" inputmode="decimal" value="${Math.round(tp)}"></div>
-          <div><label>損切り</label><input id="e-sl-${x.code}" inputmode="decimal" value="${Math.round(sl)}"></div>
+          <div><label>${isShort(x)?'売建値':'買値'}</label><input id="e-entry-${x.code}" inputmode="decimal" value="${x.entry}"></div>
+          <div><label>利確目標${isShort(x)?'(下)':''}</label><input id="e-tp-${x.code}" inputmode="decimal" value="${Math.round(tp)}"></div>
+          <div><label>損切り${isShort(x)?'(上)':''}</label><input id="e-sl-${x.code}" inputmode="decimal" value="${Math.round(sl)}"></div>
         </div>
         <div class="row" style="margin-top:10px">
           <button class="btn sm" style="flex:1" onclick="saveHoldEdit('${x.code}')">保存</button>
@@ -1620,8 +1655,8 @@ function renderHolds(){
     const modeMk = x.mode==='fixed'?'🔒固定':'📈追従';
     return `<div class="wrow hrow" id="h-${x.code}">
       <div class="nm" onclick="loadFromWatch('${x.code}')">
-        <div class="c">${jpName(x.code)||x.code}</div>
-        <div class="s" id="hsub-${x.code}" style="white-space:normal; overflow:visible; line-height:1.7">買¥${fmt(x.entry)}${x.qty?` ×${x.qty}`:''}　🎯${fmt(tp)} / 🛑${fmt(sl)}</div>
+        <div class="c">${jpName(x.code)||x.code} ${posLabel(x)}</div>
+        <div class="s" id="hsub-${x.code}" style="white-space:normal; overflow:visible; line-height:1.7">${isShort(x)?'売建':'買'}¥${fmt(x.entry)}${x.qty?` ×${x.qty}`:''}　🎯${fmt(tp)} / 🛑${fmt(sl)}</div>
       </div>
       <div class="st" id="hst-${x.code}"><span class="tag flat">…</span></div>
       <div class="pr"><div class="p" id="hpx-${x.code}">—</div><div class="pl" id="hpl-${x.code}"></div></div>
@@ -1640,56 +1675,77 @@ async function refreshHolds(){
     const D=await fetchData(x.code,'1y');
     if(!D){ setTxt(`hpx-${x.code}`,'取得失敗'); continue; }
     const m=computeMetrics(D.rows, D.meta, curStyle);
+    const short=isShort(x);
     let {tp,sl,mode}=effTargets(x, m);
     if(mode==='tech'){
-      // 購入日を起点に、購入時ライン＆トレイリングを日足から遡って再現
+      // 建日を起点に、建玉時ライン＆トレイリングを日足から遡って再現（信用売りは上下反転）
       const rows=D.rows, cl=rows.map(r=>r.c), hi=rows.map(r=>r.h), lo=rows.map(r=>r.l), ts=rows.map(r=>r.t);
       const bt=(x.buyDate||Date.now())/1000;
       let bi=ts.findIndex(t=>t>=bt); if(bi<0) bi=rows.length-1;
+      const plan=short?planLevelsShort:planLevels;
       if(x.tp0==null||x.sl0==null){
-        const L0=planLevels(cl.slice(0,bi+1),hi.slice(0,bi+1),lo.slice(0,bi+1),curStyle);
+        const L0=plan(cl.slice(0,bi+1),hi.slice(0,bi+1),lo.slice(0,bi+1),curStyle);
         x.tp0=L0.tp; x.sl0=L0.sl; dirty=true;
       }
       let trail=x.sl0;
       for(let i=bi;i<rows.length;i++){
-        const L=planLevels(cl.slice(0,i+1),hi.slice(0,i+1),lo.slice(0,i+1),curStyle);
-        trail=Math.max(trail, Math.min(L.sl, cl[i]*0.995));
+        const L=plan(cl.slice(0,i+1),hi.slice(0,i+1),lo.slice(0,i+1),curStyle);
+        if(short) trail=Math.min(trail, Math.max(L.sl, cl[i]*1.005)); // 下落に合わせ損切りを切り下げ利益を守る
+        else trail=Math.max(trail, Math.min(L.sl, cl[i]*0.995));
       }
-      sl=Math.min(trail, m.px*0.995);
-      tp=Math.max(m.recHigh, m.tp);
+      if(short){
+        sl=Math.max(trail, m.px*1.005);
+        const Ls=planLevelsShort(cl,hi,lo,curStyle);
+        tp=Math.min(m.recLow, Ls.tp);
+      } else {
+        sl=Math.min(trail, m.px*0.995);
+        tp=Math.max(m.recHigh, m.tp);
+      }
     } else if(x.tp0==null||x.sl0==null){ x.tp0=tp; x.sl0=sl; dirty=true; }
     const modeMk = x.mode==='fixed'?'🔒固定':(mode==='manual'?'✋手動':'📈追従');
     const days = x.buyDate ? Math.floor((Date.now()-x.buyDate)/86400000) : null;
-    const held = days!=null ? `・${days}日保有` : '';
-    const trailUp = (x.sl0!=null && sl>x.sl0+0.5) ? ` <span style="color:var(--up)">🛑▲${fmt(sl-x.sl0)}</span>` : '';
-    const flow = `<span style="color:var(--mut)">購入時</span> 🎯${fmt(x.tp0)}/🛑${fmt(x.sl0)} <span style="color:var(--acc)">→</span> <span style="color:var(--mut)">現在</span> 🎯${fmt(tp)}/🛑${fmt(sl)}${trailUp}`;
-    setHtml(`hsub-${x.code}`, `買¥${fmt(x.entry)}${x.qty?` ×${x.qty}`:''}${held} ${modeMk}<br>${flow}`);
+    const held = days!=null ? `・${days}日${short?'経過':'保有'}` : '';
+    // 制度信用の返済期限は6ヶ月。信用建玉が5ヶ月を超えたら注意表示
+    const dueMk = (x.pos==='mbuy'||x.pos==='msell') && days!=null && days>=150 ? ' <span style="color:var(--down)">⏰期日注意</span>' : '';
+    const trailUp = x.sl0!=null && (short ? sl<x.sl0-0.5 : sl>x.sl0+0.5)
+      ? ` <span style="color:var(--up)">🛑${short?'▼':'▲'}${fmt(Math.abs(sl-x.sl0))}</span>` : '';
+    const flow = `<span style="color:var(--mut)">建玉時</span> 🎯${fmt(x.tp0)}/🛑${fmt(x.sl0)} <span style="color:var(--acc)">→</span> <span style="color:var(--mut)">現在</span> 🎯${fmt(tp)}/🛑${fmt(sl)}${trailUp}`;
+    setHtml(`hsub-${x.code}`, `${short?'売建':'買'}¥${fmt(x.entry)}${x.qty?` ×${x.qty}`:''}${held} ${modeMk}${dueMk}<br>${flow}`);
     setTxt(`hpx-${x.code}`, fmt(m.px)+'円');
-    const plp=(m.px-x.entry)/x.entry*100;
+    const plp=(short?(x.entry-m.px):(m.px-x.entry))/x.entry*100;
     const plEl=document.getElementById(`hpl-${x.code}`);
     if(plEl){
-      const yen=x.qty?`  ${plp>=0?'+':''}${Math.round((m.px-x.entry)*x.qty).toLocaleString()}円`:'';
+      const plYen=short?(x.entry-m.px):(m.px-x.entry);
+      const yen=x.qty?`  ${plp>=0?'+':''}${Math.round(plYen*x.qty).toLocaleString()}円`:'';
       plEl.textContent=`${plp>=0?'+':''}${plp.toFixed(1)}%${yen}`;
       plEl.style.color=plp>=0?'var(--up)':'var(--down)';
     }
-    // 判定
+    // 判定（信用売りは条件が上下反転。返済=買い戻し）
     let st, sev=0;
-    if(m.px>=tp){ st=tag('up','🎯利確目標 売り検討'); sev=2; }
-    else if(m.px<=sl){ st=tag('dc','🛑損切りライン 売り検討'); sev=2; }
-    else if(m.cross?.type==='dc'||m.shortDn){ st=tag('down','⚠トレンド悪化'); sev=1; }
-    else if(m.rsi>=75){ st=tag('warn','過熱(利確検討)'); sev=1; }
-    else { st=tag('flat','✅継続'); }
+    if(short){
+      if(m.px<=tp){ st=tag('up','🎯利確目標 買戻し検討'); sev=2; }
+      else if(m.px>=sl){ st=tag('dc','🛑損切りライン 買戻し検討'); sev=2; }
+      else if(m.cross?.type==='gc'||m.shortUp){ st=tag('down','⚠上昇転換(逆行)'); sev=1; }
+      else if(m.rsi<=25){ st=tag('warn','売られすぎ(利確検討)'); sev=1; }
+      else { st=tag('flat','✅継続'); }
+    } else {
+      if(m.px>=tp){ st=tag('up','🎯利確目標 売り検討'); sev=2; }
+      else if(m.px<=sl){ st=tag('dc','🛑損切りライン 売り検討'); sev=2; }
+      else if(m.cross?.type==='dc'||m.shortDn){ st=tag('down','⚠トレンド悪化'); sev=1; }
+      else if(m.rsi>=75){ st=tag('warn','過熱(利確検討)'); sev=1; }
+      else { st=tag('flat','✅継続'); }
+    }
     setHtml(`hst-${x.code}`, st);
-    if(sev>=2 && x.on && alertsEnabled()) fired.push({code:x.code, name:jpName(x.code)||x.code, px:m.px, tp, sl, up:m.px>=tp});
+    if(sev>=2 && x.on && alertsEnabled()) fired.push({code:x.code, name:jpName(x.code)||x.code, px:m.px, tp, sl, short, up:short?m.px<=tp:m.px>=tp});
   }
   if(dirty) setHolds(h);
   // アラート表示＋通知
   const bar=document.getElementById('alertBar');
   if(fired.length){
-    bar.innerHTML='🔔 売りシグナル: '+fired.map(f=>`${f.name}（${fmt(f.px)}円 ${f.up?'利確到達':'損切り到達'}）`).join(' / ');
+    bar.innerHTML='🔔 決済シグナル: '+fired.map(f=>`${f.name}（${fmt(f.px)}円 ${f.up?'利確到達':'損切り到達'}${f.short?'・買戻し':'・売り'}）`).join(' / ');
     bar.classList.add('on'); beep(320,0.18,0.06); setTimeout(()=>beep(260,0.22,0.06),200);
     if('Notification' in window && Notification.permission==='granted'){
-      fired.forEach(f=>{ try{ new Notification('売りシグナル: '+f.name, {body:`${fmt(f.px)}円 — ${f.up?'利確目標到達':'損切りライン到達'}`}); }catch(e){} });
+      fired.forEach(f=>{ try{ new Notification((f.short?'買戻しシグナル: ':'売りシグナル: ')+f.name, {body:`${fmt(f.px)}円 — ${f.up?'利確目標到達':'損切りライン到達'}`}); }catch(e){} });
     }
   } else { bar.classList.remove('on'); }
 }
