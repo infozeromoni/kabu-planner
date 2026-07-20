@@ -443,10 +443,10 @@
       <button data-v="pull" onclick="setLens('pull')">🌱押し目</button>
       <button data-v="break" onclick="setLens('break')">⚡ブレイク</button>
       <button data-v="reb" onclick="setLens('reb')">💎反発</button>
+      <button onclick="enrichMargin()" style="color:var(--warn); font-weight:700" title="表示中の上位20銘柄の信用残リスクを確認">🏦信用残</button>
     </div>
     <div class="hint" id="lensDesc" style="margin-top:6px"></div>
-    <button class="btn ghost sm" style="width:100%; margin-top:8px" onclick="enrichMargin()">🏦 表示中の上位20銘柄の信用残リスクを確認</button>
-    <div class="hint">買い残の増加＝将来の売り圧力（高倍率ほど上値が重い）、売り残の増加＝踏み上げ（逆行急騰）リスク。⚠危険と判定した銘柄は表示順を後ろに降格します。データは週1回更新（Yahoo!ファイナンス）。</div>
+    <div class="hint">🏦信用残＝表示中の上位20銘柄の信用残をチェック。買い残の増加＝将来の売り圧力（高倍率ほど上値が重い）、売り残の増加＝踏み上げ（逆行急騰）リスク。⚠危険と判定した銘柄は表示順を後ろに降格します。データは週1回更新（Yahoo!ファイナンス）。</div>
     <div class="hint num" id="mProg" style="margin-top:4px"></div>
   </div>
   <div id="slist"></div>
