@@ -526,6 +526,8 @@
       <button data-v="ratioUp" onclick="setMgLens('ratioUp')">倍率増</button>
       <button data-v="buyUp" onclick="setMgLens('buyUp')">買残増</button>
       <button data-v="buyDn" onclick="setMgLens('buyDn')">買残減</button>
+      <button data-v="buyTotal" onclick="setMgLens('buyTotal')">買残合計</button>
+      <button data-v="sellTotal" onclick="setMgLens('sellTotal')">売残合計</button>
     </div>
     <div class="hint" id="mgLensDesc" style="margin-top:6px"></div>
     <div id="mgRankList"></div>
@@ -985,6 +987,8 @@ const MG_LENS={
   ratioUp:{d:'信用倍率の上昇幅が大きい順（前週比）＝買い長化が進んでいる', f:e=>e.chgRatio!=null&&e.chgRatio>0, s:(a,b)=>b.chgRatio-a.chgRatio, fmt:e=>'+'+e.chgRatio.toFixed(2)},
   buyUp:{d:'買残の増加が大きい順＝将来の売り圧力が積み上がっている（上値が重くなりやすい）', f:e=>e.mg.buyChg>0, s:(a,b)=>b.mg.buyChg-a.mg.buyChg, fmt:e=>mgChgF(e.mg.buyChg)+'万'},
   buyDn:{d:'買残の減少が大きい順＝売り圧力が軽くなっている（需給改善）', f:e=>e.mg.buyChg<0, s:(a,b)=>a.mg.buyChg-b.mg.buyChg, fmt:e=>mgChgF(e.mg.buyChg)+'万'},
+  buyTotal:{d:'買残の合計が大きい順＝買い方の建玉総量（将来の売り圧力の総量）', f:e=>e.mg.buy>0, s:(a,b)=>b.mg.buy-a.mg.buy, fmt:e=>mgMan(e.mg.buy)+'万'},
+  sellTotal:{d:'売残の合計が大きい順＝売り方の建玉総量（踏み上げ時の買い戻し燃料）', f:e=>e.mg.sell>0, s:(a,b)=>b.mg.sell-a.mg.sell, fmt:e=>mgMan(e.mg.sell)+'万'},
 };
 let curMgLens='ratioLow';
 function setMgLens(v){ curMgLens=v; document.querySelectorAll('#mgLens button').forEach(b=>b.classList.toggle('on',b.dataset.v===v)); renderMgRank(); }
