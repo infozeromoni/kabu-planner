@@ -335,6 +335,16 @@
       <div class="kv"><span class="mut">リスク／リワード</span><span class="r" id="k-rr"></span></div>
     </div>
 
+    <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--line); display:none" id="mgPanel">
+      <div style="font-weight:700; font-size:13px; margin-bottom:8px">🏦 信用残（週次）<span id="mgDate" style="font-weight:400; font-size:12px; color:var(--mut)"></span></div>
+      <div class="kv"><span class="mut">買残 / 前週比</span><span class="r" id="mg-buy"></span></div>
+      <div class="kv"><span class="mut">売残 / 前週比</span><span class="r" id="mg-sell"></span></div>
+      <div class="kv"><span class="mut">信用倍率</span><span class="r" id="mg-ratio"></span></div>
+      <div class="kv"><span class="mut">買い目線の評価</span><span class="r" id="mg-riskb"></span></div>
+      <div class="kv"><span class="mut">売り目線の評価</span><span class="r" id="mg-risks"></span></div>
+      <div class="hint">買残増＝将来の売り圧力（上値が重くなりやすい）／売残増＝踏み上げ（逆行急騰）の火種。データは週1回更新。</div>
+    </div>
+
     <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--line)">
       <div style="font-weight:700; font-size:13px; margin-bottom:8px">📊 シグナル判定 <span id="sigSummary" style="font-weight:400; font-size:12px"></span></div>
       <div id="sigList"></div>
@@ -833,6 +843,30 @@ async function run(){
   }
   lastData={code, name:jpName(code)||D.meta.shortName||D.meta.symbol, rows:D.rows, meta:D.meta, src:D.src};
   render(lastData); beep(760,0.05,0.05);
+  renderMarginDetail(code); // 信用残は別途取得(週次データ・非同期で後から表示)
+}
+// 詳細タブの信用残パネル。取得できたときだけ表示する
+let mgDetailSeq=0;
+async function renderMarginDetail(code){
+  const panel=document.getElementById('mgPanel'); if(!panel) return;
+  const seq=++mgDetailSeq;
+  panel.style.display='none';
+  const d=await fetchMarginHist(code);
+  if(seq!==mgDetailSeq) return; // 取得中に別銘柄へ切り替えた場合は破棄
+  if(!d||!d.length) return;
+  const L=d[0], P=d[1]||{};
+  const mg={dt:L.dt, ratio:L.ratio, buyChg:L.buyChg, sellChg:L.sellChg, buyChg2:P.buyChg??0, sellChg2:P.sellChg??0};
+  const man=v=>(v/10000).toLocaleString(undefined,{maximumFractionDigits:1})+'万株';
+  const chg=v=>(v>=0?'+':'−')+(Math.abs(v)/10000).toLocaleString(undefined,{maximumFractionDigits:1})+'万';
+  document.getElementById('mgDate').textContent=`（${L.dt}時点）`;
+  document.getElementById('mg-buy').innerHTML=`${man(L.buy)} <span style="color:${L.buyChg>0?'var(--warn)':'var(--mut)'}">(${chg(L.buyChg)})</span>`;
+  document.getElementById('mg-sell').innerHTML=`${man(L.sell)} <span style="color:${L.sellChg>0?'var(--warn)':'var(--mut)'}">(${chg(L.sellChg)})</span>`;
+  document.getElementById('mg-ratio').textContent=L.ratio.toFixed(2)+' 倍';
+  const kb=marginRisk(mg,'buy'), ks=marginRisk(mg,'sell');
+  const col=k=>k.lv===2?'var(--down)':k.lv===1?'var(--warn)':'var(--up)';
+  document.getElementById('mg-riskb').innerHTML=`<span style="color:${col(kb)}; font-weight:700">${kb.t}</span>`;
+  document.getElementById('mg-risks').innerHTML=`<span style="color:${col(ks)}; font-weight:700">${ks.t}</span>`;
+  panel.style.display='';
 }
 
 function render(d){
