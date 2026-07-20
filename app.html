@@ -443,7 +443,8 @@
       <button data-v="pull" onclick="setLens('pull')">🌱押し目</button>
       <button data-v="break" onclick="setLens('break')">⚡ブレイク</button>
       <button data-v="reb" onclick="setLens('reb')">💎反発</button>
-      <button onclick="enrichMargin()" style="color:var(--warn); font-weight:700" title="表示中の上位20銘柄の信用残リスクを確認">🏦信用残</button>
+      <button data-v="ratio" onclick="setLens('ratio')">🎈倍率低</button>
+      <button onclick="enrichMargin()" style="color:var(--warn); font-weight:700" title="信用残データを取得（倍率低レンズでは全スキャン銘柄分）">🏦信用残</button>
     </div>
     <div class="hint" id="lensDesc" style="margin-top:6px"></div>
     <div class="hint">🏦信用残＝表示中の上位20銘柄の信用残をチェック。買い残の増加＝将来の売り圧力（高倍率ほど上値が重い）、売り残の増加＝踏み上げ（逆行急騰）リスク。⚠危険と判定した銘柄は表示順を後ろに降格します。データは週1回更新（Yahoo!ファイナンス）。</div>
@@ -1523,6 +1524,13 @@ const LENS={
   pull: {d:'🌱 上昇トレンドで今は下寄り＝仕込み場候補（バンド下限に近い順）', f:a=>a.filter(r=>r.uptrend && (r.pos??0)>35).sort((x,y)=>(x.bbPos??50)-(y.bbPos??50))},
   break:{d:'⚡ 52週高値圏でブレイク狙い（高値に近い順）', f:a=>a.filter(r=>(r.mom??0)>-2).sort((x,y)=>(y.pos??0)-(x.pos??0))},
   reb:  {d:'💎 売られすぎからの反発狙い（RSIが低い順・逆張り）', f:a=>a.slice().sort((x,y)=>(x.rsi??50)-(y.rsi??50))},
+  ratio:{d:'🎈 信用倍率が低い順（0.1倍〜）＝売り残が多く踏み上げ（急騰）が起きやすい需給。空売りは危険・買い方には妙味も。※信用残を取得済みの銘柄のみ表示', f:a=>{
+    // 取得済みキャッシュ(toushi_margin)からr.mgを補完してから倍率昇順に並べる
+    const st=marginStore();
+    a.forEach(r=>{ if(!r.mg && st[r.code]?.d?.length){ const L=st[r.code].d[0], P=st[r.code].d[1]||{};
+      r.mg={dt:L.dt, ratio:L.ratio, buyChg:L.buyChg, sellChg:L.sellChg, buyChg2:P.buyChg??0, sellChg2:P.sellChg??0}; } });
+    return a.filter(r=>r.mg && r.mg.ratio>=0.1).sort((x,y)=>x.mg.ratio-y.mg.ratio);
+  }},
 };
 let curLens='total';
 function setLens(v){ curLens=v; document.querySelectorAll('#lens button').forEach(b=>b.classList.toggle('on',b.dataset.v===v)); renderScan(); }
@@ -1566,8 +1574,17 @@ let enrichingMg=false;
 async function enrichMargin(){
   if(enrichingMg) return;
   if(!scanResults.length){ alert('先に「▶ スキャン開始」を実行してください'); return; }
+  // 倍率低レンズ: 全スキャン銘柄の未取得分を取得（キャッシュ済みはスキップ）。他レンズ: 表示中の上位20のみ
+  let top;
+  if(curLens==='ratio'){
+    LENS.ratio.f(scanResults); // キャッシュからr.mgを補完
+    top=scanResults.filter(r=>!r.mg);
+    if(!top.length){ renderScan(); return; }
+    if(top.length>30 && !confirm(`信用倍率リスト用に ${top.length} 銘柄の信用残を取得します。初回は数分かかることがあります。実行しますか？`)) return;
+  } else {
+    top=LENS[curLens].f(scanResults).slice(0,20);
+  }
   enrichingMg=true;
-  const top=LENS[curLens].f(scanResults).slice(0,20);
   const p=document.getElementById('mProg'); let done=0;
   for(let i=0;i<top.length;i+=3){
     await Promise.all(top.slice(i,i+3).map(async r=>{
@@ -1579,6 +1596,7 @@ async function enrichMargin(){
       done++;
     }));
     if(p) p.textContent=`信用残を確認中… ${done}/${top.length}`;
+    if(curLens==='ratio' && done%15<3) renderScan(); // 倍率低レンズは取得しながら順次リストを更新
   }
   enrichingMg=false;
   const got=top.filter(r=>r.mg).length;
@@ -1590,15 +1608,18 @@ function renderScan(){
   const box=document.getElementById('slist');
   document.getElementById('lensDesc').textContent = LENS[curLens].d;
   let top=LENS[curLens].f(scanResults).slice(0,20);
-  const mgSide = curLens==='sell' ? 'sell' : 'buy';
+  const mgSide = (curLens==='sell'||curLens==='ratio') ? 'sell' : 'buy';
   // 信用残チェック済みなら、危険度の高い銘柄を同一リスト内で後ろに降格（元の順位は同一危険度内で維持）
-  if(top.some(r=>r.mg)){
+  // ※倍率低レンズは倍率順そのものが情報なので降格しない
+  if(curLens!=='ratio' && top.some(r=>r.mg)){
     top=top.map((r,i)=>({r,i}))
       .sort((a,b)=>((marginRisk(a.r.mg,mgSide)?.lv||0)-(marginRisk(b.r.mg,mgSide)?.lv||0)) || (a.i-b.i))
       .map(x=>x.r);
   }
   if(!top.length){
-    box.innerHTML = curLens==='now'
+    box.innerHTML = curLens==='ratio'
+      ? '<div class="card empty">🎈 信用残データがまだありません。<b>「🏦信用残」ボタン</b>で取得してください（このレンズでは全スキャン銘柄分を取得します。初回は数分かかります）。</div>'
+      : curLens==='now'
       ? '<div class="card empty">🛒 今日は「今買い」該当なし。<b>無理に買う日ではない</b>——それが今日の答えです。<br><span style="font-size:11px">（🌱押し目レンズで「あと少しで買い場」の候補を待ち伏せするのも手）</span></div>'
       : curLens==='sell'
       ? '<div class="card empty">📉 今日は「今売り」該当なし。<b>無理に売る/避ける日ではない</b>——それが今日の答えです。</div>'
