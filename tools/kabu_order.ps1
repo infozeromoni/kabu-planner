@@ -57,8 +57,13 @@ $lbInfo = Add-Label '銘柄コードを入れて「現在値」を押してく�
 $lbInfo.MaximumSize = '380,0'
 
 $btnOrder = New-Object Windows.Forms.Button
-$btnOrder.Text = '発注内容を確認する'; $btnOrder.Location = '20,265'; $btnOrder.Size = '360,40'
+$btnOrder.Text = '💰 買い注文を確認して発注'; $btnOrder.Location = '20,265'; $btnOrder.Size = '360,40'
+$btnOrder.BackColor = [Drawing.Color]::FromArgb(220,245,225)
 $form.Controls.Add($btnOrder)
+$cbSide.Add_SelectedIndexChanged({
+  if ($cbSide.SelectedItem -eq '買い') { $btnOrder.Text = '💰 買い注文を確認して発注'; $btnOrder.BackColor = [Drawing.Color]::FromArgb(220,245,225) }
+  else { $btnOrder.Text = '📉 売り注文を確認して発注'; $btnOrder.BackColor = [Drawing.Color]::FromArgb(250,225,225) }
+})
 
 $btnQuote.Add_Click({
   try {
