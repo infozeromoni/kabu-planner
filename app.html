@@ -226,7 +226,7 @@
 <div class="topbar">
   <div>
     <h1>📈 日本株 売買プランナー</h1>
-    <div class="sub"><span class="brand">INCOMEBASE</span> 提供 ／ <b>判断の補助</b>ツール <span style="color:var(--mut); font-size:10px">v9</span></div>
+    <div class="sub"><span class="brand">INCOMEBASE</span> 提供 ／ <b>判断の補助</b>ツール <span style="color:var(--mut); font-size:10px">v10</span></div>
   </div>
   <div class="clock">
     <span class="dot"></span><span id="mkt">—</span>
@@ -1930,11 +1930,12 @@ function renderScan(){
   document.getElementById('lensDesc').textContent = LENS[curLens].d + exclNote;
   let top=all.slice(0,20);
   const mgSide = (curLens==='sell'||curLens==='ratio') ? 'sell' : 'buy';
-  // 信用残チェック済みなら、危険度の高い銘柄を同一リスト内で後ろに降格（元の順位は同一危険度内で維持）
+  // 信用残チェック済みなら、⚠危険(lv2)の銘柄だけ後ろに降格（△注意はスコア順のままバッジ表示のみ）
   // ※倍率低レンズは倍率順そのものが情報なので降格しない
   if(curLens!=='ratio' && top.some(r=>r.mg)){
+    const sink=r=>((marginRisk(r.mg,mgSide)?.lv||0)===2 ? 1 : 0);
     top=top.map((r,i)=>({r,i}))
-      .sort((a,b)=>((marginRisk(a.r.mg,mgSide)?.lv||0)-(marginRisk(b.r.mg,mgSide)?.lv||0)) || (a.i-b.i))
+      .sort((a,b)=>(sink(a.r)-sink(b.r)) || (a.i-b.i))
       .map(x=>x.r);
   }
   if(!top.length){
