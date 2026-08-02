@@ -1,3 +1,3 @@
 @echo off
-rem kabuステーションAPI 発注ツール（現物・確認画面つき）
+rem kabu STATION API order tool (cash equity, with confirmation)
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0kabu_order.ps1"

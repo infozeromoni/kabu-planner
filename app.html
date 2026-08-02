@@ -226,7 +226,7 @@
 <div class="topbar">
   <div>
     <h1>📈 日本株 売買プランナー</h1>
-    <div class="sub"><span class="brand">INCOMEBASE</span> 提供 ／ <b>判断の補助</b>ツール <span style="color:var(--mut); font-size:10px">v6</span></div>
+    <div class="sub"><span class="brand">INCOMEBASE</span> 提供 ／ <b>判断の補助</b>ツール <span style="color:var(--mut); font-size:10px">v8</span></div>
   </div>
   <div class="clock">
     <span class="dot"></span><span id="mkt">—</span>
@@ -1588,16 +1588,35 @@ tickClock(); setInterval(tickClock, 1000);
 async function checkKabuApi(manual){
   const el=document.getElementById('apiDot'); if(!el) return;
   if(manual){ el.textContent='API…'; el.style.color='var(--mut)'; }
+  // 1段目: この端末のlocalhost(PCでkabuステーション起動中か)
   try{
     const ctl=new AbortController(); const to=setTimeout(()=>ctl.abort(),2500);
     await fetch('http://localhost:18080/kabusapi/board/101@1',{mode:'no-cors',cache:'no-store',signal:ctl.signal});
     clearTimeout(to);
     el.textContent='API●'; el.style.color='var(--up)';
     el.title='kabuステーションAPI: 接続OK（このPCで起動中）。クリックで再確認';
-  }catch(e){
-    el.textContent='API○'; el.style.color='var(--mut)';
-    el.title='kabuステーションAPI: 未接続（kabuステーション未起動、またはスマホ閲覧）。クリックで再確認';
+    return;
+  }catch(e){}
+  // 2段目: サーバー経由でPCの生存信号を確認（スマホ用。kabu_beat.bat がPCで動いていること）
+  if(location.protocol.startsWith('http')){
+    try{
+      const r=await fetch(new URL('proxy.php?beat=get&_='+Date.now(), location.href), {cache:'no-store'});
+      const j=await r.json();
+      const age=Math.round(Date.now()/1000-j.t);
+      if(j.st==='ok' && age<180){
+        el.textContent='PC:API●'; el.style.color='var(--up)';
+        el.title=`自宅PCのkabuステーションが起動中（遠隔確認・${age}秒前の信号）。クリックで再確認`;
+        return;
+      }
+      if(j.st==='ng' && age<180){
+        el.textContent='PC:API○'; el.style.color='var(--warn)';
+        el.title='自宅PCは稼働中だがkabuステーションが未起動（遠隔確認）。クリックで再確認';
+        return;
+      }
+    }catch(e){}
   }
+  el.textContent='API○'; el.style.color='var(--mut)';
+  el.title='kabuステーションAPI: 未接続（PC・ビーコン停止中、または未対応環境）。クリックで再確認';
 }
 checkKabuApi(); setInterval(checkKabuApi, 60000);
 
@@ -1853,8 +1872,21 @@ async function enrichMargin(){
 }
 function renderScan(){
   const box=document.getElementById('slist');
-  document.getElementById('lensDesc').textContent = LENS[curLens].d;
-  let top=LENS[curLens].f(scanResults).slice(0,20);
+  let all=LENS[curLens].f(scanResults);
+  // 信用倍率10倍超（買い長すぎ＝将来の売り圧力大）は発掘リストから除外。
+  // 取得済みキャッシュからr.mgを補完して判定。今売りレンズは除外しない（買い長は売り方に有利な材料のため）
+  let exclNote='';
+  if(curLens!=='sell'){
+    const st=marginStore();
+    all.forEach(r=>{ if(!r.mg && st[r.code]?.d?.length){ const L=st[r.code].d[0], P=st[r.code].d[1]||{};
+      r.mg={dt:L.dt, ratio:L.ratio, buyChg:L.buyChg, sellChg:L.sellChg, buyChg2:P.buyChg??0, sellChg2:P.sellChg??0}; } });
+    const before=all.length;
+    all=all.filter(r=>!(r.mg && r.mg.ratio>10));
+    const ex=before-all.length;
+    if(ex>0) exclNote=`　※信用倍率10倍超の${ex}銘柄を除外中`;
+  }
+  document.getElementById('lensDesc').textContent = LENS[curLens].d + exclNote;
+  let top=all.slice(0,20);
   const mgSide = (curLens==='sell'||curLens==='ratio') ? 'sell' : 'buy';
   // 信用残チェック済みなら、危険度の高い銘柄を同一リスト内で後ろに降格（元の順位は同一危険度内で維持）
   // ※倍率低レンズは倍率順そのものが情報なので降格しない

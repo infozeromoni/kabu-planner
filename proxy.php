@@ -41,6 +41,21 @@ function parse_margin_html($html) {
   return $out ?: null;
 }
 
+// ---- PCのkabuステーション生存信号（スマホの接続マーク用） ----
+// set: PC側スクリプトが1分ごとに送信 / get: アプリが読む（180秒以内のokなら起動中と判定）
+if (isset($_GET['beat'])) {
+  header('Content-Type: application/json; charset=utf-8');
+  $bf = sys_get_temp_dir() . '/kabu_beat.json';
+  if ($_GET['beat'] === 'set') {
+    if (($_GET['k'] ?? '') !== 'zeromoni-beat') { http_response_code(403); echo '{"e":"forbidden"}'; exit; }
+    $st = (($_GET['st'] ?? 'ok') === 'ok') ? 'ok' : 'ng';
+    @file_put_contents($bf, json_encode(['t' => time(), 'st' => $st]));
+    echo '{"r":"ok"}'; exit;
+  }
+  echo is_file($bf) ? file_get_contents($bf) : '{"t":0,"st":"none"}';
+  exit;
+}
+
 // ---- 信用残 軽量API ----
 if (isset($_GET['margin'])) {
   header('Content-Type: application/json; charset=utf-8');
