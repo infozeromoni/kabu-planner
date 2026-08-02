@@ -226,12 +226,13 @@
 <div class="topbar">
   <div>
     <h1>📈 日本株 売買プランナー</h1>
-    <div class="sub"><span class="brand">INCOMEBASE</span> 提供 ／ <b>判断の補助</b>ツール <span style="color:var(--mut); font-size:10px">v5</span></div>
+    <div class="sub"><span class="brand">INCOMEBASE</span> 提供 ／ <b>判断の補助</b>ツール <span style="color:var(--mut); font-size:10px">v6</span></div>
   </div>
   <div class="clock">
     <span class="dot"></span><span id="mkt">—</span>
     <button id="sndBtn" onclick="toggleSound()" title="サウンド">🔈</button><br>
-    <span class="num" id="clock">--:--:--</span> <span class="tz">JST</span>
+    <span class="num" id="clock">--:--:--</span> <span class="tz">JST</span><br>
+    <span id="apiDot" onclick="checkKabuApi(true)" style="cursor:pointer; font-size:10px; font-weight:700; color:var(--mut)" title="kabuステーションAPI: 確認中…">API…</span>
   </div>
 </div>
 
@@ -1579,6 +1580,26 @@ function tickClock(){
   const dot=document.querySelector('.clock .dot'); if(dot) dot.style.background=ms.c, dot.style.boxShadow='0 0 8px '+ms.c;
 }
 tickClock(); setInterval(tickClock, 1000);
+
+// ================= kabuステーションAPI 接続マーク =================
+// このPCの localhost:18080 (kabuステーション) に届くかを定期確認。
+// no-corsのため応答内容は読めないが、ポート到達=起動中と判定できる。
+// スマホや未起動時は到達しないためグレー表示になる。
+async function checkKabuApi(manual){
+  const el=document.getElementById('apiDot'); if(!el) return;
+  if(manual){ el.textContent='API…'; el.style.color='var(--mut)'; }
+  try{
+    const ctl=new AbortController(); const to=setTimeout(()=>ctl.abort(),2500);
+    await fetch('http://localhost:18080/kabusapi/board/101@1',{mode:'no-cors',cache:'no-store',signal:ctl.signal});
+    clearTimeout(to);
+    el.textContent='API●'; el.style.color='var(--up)';
+    el.title='kabuステーションAPI: 接続OK（このPCで起動中）。クリックで再確認';
+  }catch(e){
+    el.textContent='API○'; el.style.color='var(--mut)';
+    el.title='kabuステーションAPI: 未接続（kabuステーション未起動、またはスマホ閲覧）。クリックで再確認';
+  }
+}
+checkKabuApi(); setInterval(checkKabuApi, 60000);
 
 // ================= マトリックス・レイン =================
 (function matrixRain(){
