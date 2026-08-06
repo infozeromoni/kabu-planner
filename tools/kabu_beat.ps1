@@ -19,7 +19,7 @@ function Send-Rankings {
       $r = Invoke-RestMethod -Method Get -Uri "http://localhost:18080/kabusapi/ranking?Type=$t&ExchangeDivision=ALL" `
         -Headers @{ 'X-API-KEY' = $tok } -TimeoutSec 15
       $out["$t"] = @($r.Ranking | Select-Object -First 30 | ForEach-Object {
-        @{ n=$_.No; c=$_.Symbol; nm=$_.SymbolName; rt=$_.Ratio; b=$_.BuyLastWeekRatio; s=$_.SellLastWeekRatio; ex=$_.ExchangeName } })
+        @{ n=$_.No; c=$_.Symbol; nm=$_.SymbolName; rt=$_.Ratio; b=$_.BuyLastWeekRatio; s=$_.SellLastWeekRatio; ex=$_.ExchangeName; cg=$_.CategoryName } })
       Start-Sleep -Milliseconds 300
     }
     $payload = @{ t = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); r = $out } | ConvertTo-Json -Depth 5 -Compress
