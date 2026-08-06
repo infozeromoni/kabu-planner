@@ -226,7 +226,7 @@
 <div class="topbar">
   <div>
     <h1>📈 日本株 売買プランナー</h1>
-    <div class="sub"><span class="brand">INCOMEBASE</span> 提供 ／ <b>判断の補助</b>ツール <span style="color:var(--mut); font-size:10px">v12</span></div>
+    <div class="sub"><span class="brand">INCOMEBASE</span> 提供 ／ <b>判断の補助</b>ツール <span style="color:var(--mut); font-size:10px">v13</span></div>
   </div>
   <div class="clock">
     <span class="dot"></span><span id="mkt">—</span>
@@ -1816,7 +1816,7 @@ function screenScore(rows, code){
   const atResistance = distRes<=1.5 && distRes>-1.0;
   const sellNow = (m.shortDn||m.longDn) && sc<0 && (atNewLow || atResistance);
   if(sellNow) tags.unshift(atNewLow?'新安値':'戻り高値');
-  return {code, px, mom, rsi:m.rsi, score:sc, tags, buy, sell, dev, bbPos:Math.round(bbPos), pos:Math.round(pos), gc:m.cross?.type==='gc', uptrend, buyNow, sellNow};
+  return {code, px, mom, rsi:m.rsi, score:sc, tags, buy, sell, dev, bbPos:Math.round(bbPos), pos:Math.round(pos), gc:m.cross?.type==='gc', uptrend, buyNow, sellNow, broke:atNewHigh};
 }
 async function screenAll(){
   if(scanning) return; scanning=true;
@@ -1851,7 +1851,7 @@ const LENS={
   now:  {d:'🛒 今日の価格で買い推奨（上昇中で支持圏まで押した or 新高値ブレイク中）— 該当ゼロの日もあります（それが正常）', f:a=>a.filter(r=>r.buyNow).sort((x,y)=>y.score-x.score)},
   sell: {d:'📉 今日の価格で売り推奨（下降中で戻り高値圏まで戻した or 新安値ブレイク中）— 該当ゼロの日もあります（それが正常）', f:a=>a.filter(r=>r.sellNow).sort((x,y)=>x.score-y.score)},
   total:{d:'総合スコア順（多角的に強い銘柄）', f:a=>a.slice().sort((x,y)=>y.score-x.score||y.mom-x.mom)},
-  mom:  {d:'🔥 3ヶ月の上昇率が大きい順（勢い・急騰株）', f:a=>a.slice().sort((x,y)=>y.mom-x.mom)},
+  mom:  {d:'🔥 直近20日高値を"すでに上抜けた"銘柄だけを勢い順に表示（「◯円を抜けたら買い」待ちの銘柄は出しません）', f:a=>a.filter(r=>r.broke).sort((x,y)=>y.mom-x.mom)},
   pull: {d:'🌱 上昇トレンドで今は下寄り＝仕込み場候補（バンド下限に近い順）', f:a=>a.filter(r=>r.uptrend && (r.pos??0)>35).sort((x,y)=>(x.bbPos??50)-(y.bbPos??50))},
   break:{d:'⚡ 52週高値圏でブレイク狙い（高値に近い順）', f:a=>a.filter(r=>(r.mom??0)>-2).sort((x,y)=>(y.pos??0)-(x.pos??0))},
   reb:  {d:'💎 売られすぎからの反発狙い（RSIが低い順・逆張り）', f:a=>a.slice().sort((x,y)=>(x.rsi??50)-(y.rsi??50))},
@@ -1974,7 +1974,9 @@ function renderScan(){
       .map(x=>x.r);
   }
   if(!top.length){
-    box.innerHTML = curLens==='ratio'
+    box.innerHTML = curLens==='mom'
+      ? '<div class="card empty">🔥 直近20日高値を上抜け済みの銘柄は今日はありません。<br><span style="font-size:11px">※このレンズは仕様変更でブレイク済み銘柄のみ表示になりました。古いスキャン結果には判定が無いため、一度「▶ スキャン開始」をやり直してください。</span></div>'
+      : curLens==='ratio'
       ? '<div class="card empty">🎈 信用残データがまだありません。<b>「🏦信用残」ボタン</b>で取得してください（このレンズでは全スキャン銘柄分を取得します。初回は数分かかります）。</div>'
       : curLens==='now'
       ? '<div class="card empty">🛒 今日は「今買い」該当なし。<b>無理に買う日ではない</b>——それが今日の答えです。<br><span style="font-size:11px">（🌱押し目レンズで「あと少しで買い場」の候補を待ち伏せするのも手）</span></div>'
