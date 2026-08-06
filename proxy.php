@@ -116,6 +116,28 @@ if (isset($_GET['rank'])) {
   exit;
 }
 
+// ---- 企業情報（四季報系の特色・連結事業。Yahoo!ファイナンス企業情報ページから抽出） ----
+if (isset($_GET['profile'])) {
+  header('Content-Type: application/json; charset=utf-8');
+  $c = trim($_GET['profile']);
+  if (!preg_match('/^[0-9][0-9A-Z]{3}$/', $c)) { echo 'null'; exit; }
+  $pd = CACHE_DIR . '/profile'; @mkdir($pd, 0705, true);
+  $cf = "$pd/$c.json"; $nf = "$pd/$c.miss";
+  if (is_file($cf) && filemtime($cf) > time() - 604800) { readfile($cf); exit; }  // 内容は滅多に変わらないため7日キャッシュ
+  if (is_file($nf) && filemtime($nf) > time() - 600) { echo 'null'; exit; }
+  [$body, $code2] = fetch_url("https://finance.yahoo.co.jp/quote/{$c}.T/profile");
+  $tok = null; $biz = null;
+  if ($body !== false && $code2 === 200) {
+    if (preg_match('/【特色】\s*(.*?)<\/p>/su', $body, $m)) $tok = trim(strip_tags($m[1]));
+    if (preg_match('/【(連結事業|単独事業)】\s*(.*?)<\/p>/su', $body, $m2)) $biz = trim(strip_tags($m2[2]));
+  }
+  if ($tok) {
+    $j = json_encode(['tok' => $tok, 'biz' => $biz], JSON_UNESCAPED_UNICODE);
+    @file_put_contents($cf, $j); @unlink($nf); echo $j;
+  } else { @touch($nf); echo 'null'; }
+  exit;
+}
+
 // ---- 信用残 軽量API ----
 if (isset($_GET['margin'])) {
   header('Content-Type: application/json; charset=utf-8');

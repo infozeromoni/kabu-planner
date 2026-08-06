@@ -226,7 +226,7 @@
 <div class="topbar">
   <div>
     <h1>📈 日本株 売買プランナー</h1>
-    <div class="sub"><span class="brand">INCOMEBASE</span> 提供 ／ <b>判断の補助</b>ツール <span style="color:var(--mut); font-size:10px">v11</span></div>
+    <div class="sub"><span class="brand">INCOMEBASE</span> 提供 ／ <b>判断の補助</b>ツール <span style="color:var(--mut); font-size:10px">v12</span></div>
   </div>
   <div class="clock">
     <span class="dot"></span><span id="mkt">—</span>
@@ -345,6 +345,12 @@
       <div class="kv"><span class="mut">買い目線の評価</span><span class="r" id="mg-riskb"></span></div>
       <div class="kv"><span class="mut">売り目線の評価</span><span class="r" id="mg-risks"></span></div>
       <div class="hint">買残増＝将来の売り圧力（上値が重くなりやすい）／売残増＝踏み上げ（逆行急騰）の火種。データは週1回更新。</div>
+    </div>
+
+    <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--line); display:none" id="profPanel">
+      <div style="font-weight:700; font-size:13px; margin-bottom:6px">🏢 企業情報</div>
+      <div id="profText" style="font-size:13px; line-height:1.7"></div>
+      <div id="profBiz" class="hint" style="margin-top:4px"></div>
     </div>
 
     <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--line)">
@@ -912,6 +918,27 @@ async function run(){
   lastData={code, name:jpName(code)||D.meta.shortName||D.meta.symbol, rows:D.rows, meta:D.meta, src:D.src};
   render(lastData); beep(760,0.05,0.05);
   renderMarginDetail(code); // 信用残は別途取得(週次データ・非同期で後から表示)
+  renderProfileDetail(code); // 企業情報(特色)も非同期表示
+}
+// 企業情報の取得(サーバー設置版のみ・サーバー側7日キャッシュ)
+async function fetchProfile(code){
+  if(!location.protocol.startsWith('http')) return null;
+  try{
+    const r=await fetch(new URL('proxy.php?profile='+code, location.href), {cache:'no-store'});
+    if(r.ok) return await r.json();
+  }catch(e){}
+  return null;
+}
+let profSeq=0;
+async function renderProfileDetail(code){
+  const el=document.getElementById('profPanel'); if(!el) return;
+  const seq=++profSeq;
+  el.style.display='none';
+  const p=await fetchProfile(code);
+  if(seq!==profSeq || !p || !p.tok) return;
+  document.getElementById('profText').textContent=p.tok;
+  document.getElementById('profBiz').textContent=p.biz ? '連結事業: '+p.biz : '';
+  el.style.display='';
 }
 // 詳細タブの信用残パネル。取得できたときだけ表示する
 let mgDetailSeq=0;
@@ -974,7 +1001,9 @@ async function mgLookup(){
       ${d.map(r=>`<tr style="border-top:1px solid var(--line)"><td style="padding:4px 2px">${r.dt}</td><td style="text-align:right">${man(r.sell)}</td><td style="text-align:right">${man(r.buy)}</td><td style="text-align:right; font-weight:700">${r.ratio.toFixed(2)}</td></tr>`).join('')}
     </table>
     <div class="hint" style="margin-top:6px">前週比: 売残 ${chg(L.sellChg)}万株 ／ 買残 ${chg(L.buyChg)}万株</div>
+    <div class="hint" id="mgProf" style="margin-top:6px"></div>
     <button class="btn ghost sm" style="width:100%; margin-top:8px" onclick="document.getElementById('code').value='${code}';tab('d');run();window.scrollTo(0,0)">📊 この銘柄の詳細分析を開く</button>`;
+  fetchProfile(code).then(p=>{ const el=document.getElementById('mgProf'); if(el && p && p.tok) el.textContent='🏢 '+p.tok; });
   renderMgRank(); // 新規取得した銘柄をランキングにも反映
 }
 // 監視＋保有の銘柄一覧（保有を先に・重複は保有優先）
